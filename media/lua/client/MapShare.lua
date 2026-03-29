@@ -59,6 +59,32 @@ function getCurrentMapSymbols()
     return payload
 end
 
+function FactionMap:injectSymbolsFromTable(data)
+    local symbolApi = self:getSymbolsApi();
+    for _, s in ipairs(data) do
+        if s.type == "texture" then
+            local sym = symbolApi:addTexture(s.texture, s.x, s.y)
+            sym:setRGBA(s.r, s.g, s.b, s.a)
+            sym:setAnchor(0.5, 0.5)
+            sym:setScale(ISMap.SCALE)
+        elseif s.type == "text" then
+            local sym = symbolApi:addTranslatedText(s.text, UIFont.Handwritten, s.x, s.y)
+            sym:setRGBA(s.r, s.g, s.b, s.a)
+            sym:setAnchor(0.0, 0.0)
+            sym:setScale(ISMap.SCALE)
+        else
+            error("unknown type found in payload " .. (s.type or "nil"))
+        end
+
+        if s.visited then
+            local offset = 5
+            WorldMapVisited.getInstance():setKnownInSquares(
+                    s.x - offset, s.y - offset, s.x + offset, s.y + offset
+            )
+        end
+    end
+end
+
 
 -- [[ NETWORKING ]] --
 
