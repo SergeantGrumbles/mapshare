@@ -24,9 +24,75 @@ function shareMapButton(player, context, worldobjects, test)
   end
 end
 
-function onShareMap
+function onShareMap()
 
 end
 
+
+function getCurrentMapSymbols()
+    local payload = {}
+    local symAPI = self:getSymbolsApi()
+    local cnt = symAPI:getSymbolCount()
+    for i = 0, cnt - 1 do
+        local sym = symAPI:getSymbolByIndex(i)
+        if sym:isVisible() then
+            local s = {}
+            s.x = sym:getWorldX()
+            s.y = sym:getWorldY()
+            s.r = sym:getRed()
+            s.g = sym:getGreen()
+            s.b = sym:getBlue()
+            s.a = sym:getAlpha()
+            if sym:isTexture() then
+                s.type = "texture"
+                s.texture = sym:getSymbolID()
+            elseif sym:isText() then
+                s.type = "text"
+                s.text = sym:getTranslatedText() or sym:getUntranslatedText()
+            else
+                error("unknown symbol type at index " .. i)
+            end
+
+            table.insert(payload, s)
+        end
+    end
+    return payload
+end
+
+
+-- [[ NETWORKING ]] --
+
+function FactionMap:sendFactionMapData()
+    ModData.transmit(self:getPlayerFactionId())
+end
+
+function FactionMap:requestFactionMapData()
+    ModData.request(self:getPlayerFactionId())
+end
+
+local function onReceiveGlobalModData(module, packet)
+    if not string.find(module, "FactionMap_")
+            or module == "FactionMap_None"
+            or not packet then
+        return
+    end
+
+    local factionName = string.gsub(module, "FactionMap_", "")
+    if factionName ~= FactionMap:getPlayerFactionName() then
+        return
+    end
+
+    FactionMap:setFactionData(packet);
+
+    if not ISWorldMap_instance or not FactionMap.isToggled then
+        return
+    end
+
+    FactionMap:wipeCurrentMap()
+    local moddata = FactionMap:getStoredFactionSymbols()
+    FactionMap:injectSymbolsFromTable(moddata)
+end
+
+Events.OnReceiveGlobalModData.Add(onReceiveGlobalModData);
 
 Events.OnFillWorldObjectContextMenu.Add(shareMapButton)
