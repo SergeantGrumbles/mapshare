@@ -1,19 +1,15 @@
-function shareMapButton(player, context, worldobjects, test)
+MapShare = {}
 
-  base_menu =  context:addOption("Share map no logic", worldobjects, nil)
+function MapShare:shareMapButton(player, context, worldobjects, test)
 
   local playerObj = getSpecificPlayer(player)
   
-
-
-
   if clickedPlayer then
     if test == true then
       return true;
     end
 
-    -- lISWorldObjectContextMenu.onMedicalCheck
-    local option = context:addOption('Share map with logic', worldobjects, onShareMap, playerObj, clickedPlayer)
+    local option = context:addOption('Share map', worldobjects, onShareMap, playerObj, self:clickedPlayer)
 
     if math.abs(playerObj:getX() - clickedPlayer:getX()) > 2 or math.abs(playerObj:getY() - clickedPlayer:getY()) > 2 then
 			local tooltip = ISWorldObjectContextMenu.addToolTip();
@@ -24,12 +20,8 @@ function shareMapButton(player, context, worldobjects, test)
   end
 end
 
-function onShareMap()
 
-end
-
-
-function getCurrentMapSymbols()
+function MapShare:getCurrentMapSymbols()
     local payload = {}
     local symAPI = self:getSymbolsApi()
     local cnt = symAPI:getSymbolCount()
@@ -59,7 +51,7 @@ function getCurrentMapSymbols()
     return payload
 end
 
-function FactionMap:injectSymbolsFromTable(data)
+function MapShare:injectSymbolsFromTable(data)
     local symbolApi = self:getSymbolsApi();
     for _, s in ipairs(data) do
         if s.type == "texture" then
@@ -87,36 +79,22 @@ end
 
 
 -- [[ NETWORKING ]] --
-
-function FactionMap:sendFactionMapData()
-    ModData.transmit(self:getPlayerFactionId())
+function MapShare:onShareMap(clickedPlayer)
+  -- get the players current map symbols as the payload
+  local payload = getCurrentMapSymbols()
+  local key = 'MapShare:' + clickedPlayer.getDisplayName()
+  ModData.add(key, payload)
+  ModData.transmit(key)
 end
 
-function FactionMap:requestFactionMapData()
-    ModData.request(self:getPlayerFactionId())
-end
-
-local function onReceiveGlobalModData(module, packet)
-    if not string.find(module, "FactionMap_")
-            or module == "FactionMap_None"
-            or not packet then
-        return
+function MapShare:onReceiveGlobalModData(module, packet)
+    local key = 'MapShare:' + getPlayer().getDisplayName()
+    local mapData = ModData.get(key)
+    if mapData then
+      injectSymbolsFromTable(mapData)
+      ModData.add(key, nil)
+      ModData.transmit(key)
     end
-
-    local factionName = string.gsub(module, "FactionMap_", "")
-    if factionName ~= FactionMap:getPlayerFactionName() then
-        return
-    end
-
-    FactionMap:setFactionData(packet);
-
-    if not ISWorldMap_instance or not FactionMap.isToggled then
-        return
-    end
-
-    FactionMap:wipeCurrentMap()
-    local moddata = FactionMap:getStoredFactionSymbols()
-    FactionMap:injectSymbolsFromTable(moddata)
 end
 
 Events.OnReceiveGlobalModData.Add(onReceiveGlobalModData);
