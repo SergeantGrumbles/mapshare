@@ -1,9 +1,5 @@
 local function sendMapToClients(module, packet) 
-    if not string.find(module, 'MapShare:') then
-        return
-    end
-
-    if(not packet) then
+    if not string.find(module, 'MapShare_') then
         return
     end
 
