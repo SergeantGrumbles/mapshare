@@ -99,10 +99,14 @@ function MapShare:onReceiveGlobalModData(module, packet)
   local key = "MapShare_" .. getPlayer():getDisplayName()
   local mapData = ModData.get(key)
   if mapData then
-    MapShare:injectSymbolsFromTable(mapData)
-    local emptyPayload = {}
-    ModData.add(key, emptyPayload)
-    ModData.transmit(key)
+    if not ISWorldMap_instance then
+      print("you need to have opened the map at least once")
+    else
+      MapShare:injectSymbolsFromTable(mapData)
+      local emptyPayload = {}
+      ModData.add(key, emptyPayload)
+      ModData.transmit(key)
+    end
   end
 end
 
