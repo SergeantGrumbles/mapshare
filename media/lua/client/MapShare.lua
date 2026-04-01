@@ -1,23 +1,82 @@
-MapShare = {}
+MapShare = {
+  writingImplements = {
+    { item = "Pen",     colorInfo = ColorInfo.new(0, 0, 0, 1) },
+    { item = "Pencil",  colorInfo = ColorInfo.new(0.2, 0.2, 0.2, 1) },
+    { item = "RedPen",  colorInfo = ColorInfo.new(1, 0, 0, 1) },
+    { item = "BluePen", colorInfo = ColorInfo.new(0, 0, 1, 1) }
+  },
+  mapIconOscillator = 0.0,
+  mapOscillationLevel = 0,
+  mapOscillationDeceleration = 0.96,
+  mapIconOscillatorScalar = 15.6,
+  mapIconOscillatorRate = 0.8,
+  mapIconOscillatorStep = 0.0,
+}
 
 function MapShare:getSymbolsAPI()
   return ISWorldMap_instance.javaObject:getAPIv1():getSymbolsAPI()
 end
 
-function MapShare:getCurrentMapSymbols()
+function MapShare:getWritingImplementForColor(r, g, b)
+  if (self:approximatelyEqual(r, 0) and self:approximatelyEqual(g, 0) and self:approximatelyEqual(b, 0)) then
+    return "Pen"
+  elseif (self:approximatelyEqual(r, 0.2) and self:approximatelyEqual(g, 0.2) and self:approximatelyEqual(b, 0.2)) then
+    return "Pencil"
+  elseif (self:approximatelyEqual(r, 1) and self:approximatelyEqual(g, 0) and self:approximatelyEqual(b, 0)) then
+    return "RedPen"
+  elseif (self:approximatelyEqual(r, 0) and self:approximatelyEqual(g, 0) and self:approximatelyEqual(b, 1)) then
+    return "BluePen"
+  end
+end
+
+function MapShare:approximatelyEqual(a, b)
+  local epsilon = 0.01
+  return a == b or math.abs(a - b) < epsilon
+end
+
+function MapShare:getAvailableColors(player)
+  print("Player in getAvailableColors")
+  print(player)
+  local inventory = player:getInventory()
+
+  local availableWritingImplements = {}
+  for _, info in ipairs(self.writingImplements) do
+    if inventory:containsTagRecurse(info.item) or inventory:containsTypeRecurse(info.item) then
+      table.insert(availableWritingImplements, info)
+    end
+  end
+  return availableWritingImplements
+end
+
+function MapShare:getWritingImplementOrDefault(availableWritingImplements, writingImplementName)
+  for _, info in ipairs(availableWritingImplements) do
+    print(info.item)
+    if info.item == writingImplementName then
+      return info
+    end
+  end
+  return availableWritingImplements[1]
+end
+
+function MapShare:getCurrentMapSymbols(player)
   local payload = {}
   local symAPI = self:getSymbolsAPI()
   local cnt = symAPI:getSymbolCount()
+  local availableWritingImplements = self:getAvailableColors(player)
   for i = 0, cnt - 1 do
     local sym = symAPI:getSymbolByIndex(i)
     if sym:isVisible() then
       local s = {}
+
+      local requiredImplement = self:getWritingImplementForColor(sym:getRed(), sym:getGreen(), sym:getBlue())
+      local availableImplement = self:getWritingImplementOrDefault(availableWritingImplements, requiredImplement)
+
       s.x = sym:getWorldX()
       s.y = sym:getWorldY()
-      s.r = sym:getRed()
-      s.g = sym:getGreen()
-      s.b = sym:getBlue()
-      s.a = sym:getAlpha()
+      s.r = availableImplement.colorInfo:getR()
+      s.g = availableImplement.colorInfo:getG()
+      s.b = availableImplement.colorInfo:getB()
+      s.a = availableImplement.colorInfo:getA()
       if sym:isTexture() then
         s.type = "texture"
         s.texture = sym:getSymbolID()
@@ -60,6 +119,7 @@ end
 
 function MapShare:injectSymbolsFromTable(data)
   local symbolApi = self:getSymbolsAPI()
+
   for _, s in ipairs(data) do
     if not self:symbolExists(s) then
       if s.type == "texture" then
@@ -87,12 +147,39 @@ function MapShare:injectSymbolsFromTable(data)
 end
 
 function MapShare:onShareMap(player, otherPlayer)
-  local payload = MapShare:getCurrentMapSymbols()
+  print("onShareMap")
+  print(player)
+  print(otherPlayer)
+  if player:getAccessLevel() ~= "None" then
+    ISTimedActionQueue.add(MapShareAction:new(player, otherPlayer))
+  else
+    if luautils.walkAdj(player, otherPlayer:getCurrentSquare()) then
+      ISTimedActionQueue.add(MapShareAction:new(player, otherPlayer))
+    end
+  end
+end
+
+function MapShare:shareMap(player, otherPlayer)
+  local payload = MapShare:getCurrentMapSymbols(player)
   local otherPlayerName = otherPlayer:getDisplayName()
   local key = "MapShare_" .. otherPlayerName
   print(key)
   ModData.add(key, payload)
   ModData.transmit(key)
+end
+
+function MapShare:updateMap(key, mapData)
+  print("before inject set")
+  self:injectSymbolsFromTable(mapData)
+  print("before wobble set")
+  self.mapOscillationLevel = 1
+  print("after wobble set")
+  local emptyPayload = {}
+  print("after payload set")
+  ModData.add(key, emptyPayload)
+  print("after adding")
+  ModData.transmit(key)
+  print("after transmit")
 end
 
 function MapShare:onReceiveGlobalModData(module, packet)
@@ -102,12 +189,36 @@ function MapShare:onReceiveGlobalModData(module, packet)
     if not ISWorldMap_instance then
       print("you need to have opened the map at least once")
     else
-      MapShare:injectSymbolsFromTable(mapData)
-      local emptyPayload = {}
-      ModData.add(key, emptyPayload)
-      ModData.transmit(key)
+      MapShare:updateMap(key, mapData)
     end
   end
+end
+
+function MapShare:shakeMap()
+  local mapButton = ISEquippedItem.instance.mapBtn
+  if not mapButton or self.mapOscillationLevel == 0 then
+    if self.mapOscillationLevel > 0.01 then
+      local fpsFrac = (UIManager.getMillisSinceLastRender() / 33.3) * 0.5;
+      self.mapOscillationLevel = self.mapOscillationLevel * self.mapOscillationDeceleration
+      self.mapOscillationLevel = self.mapOscillationLevel -
+          (self.mapOscillationLevel * (1 - self.mapOscillationDeceleration) * fpsFrac)
+      self.mapIconOscillatorStep = self.mapIconOscillatorStep + self.mapIconOscillatorRate * fpsFrac
+      self.mapIconOscillator = math.sin(self.mapIconOscillatorStep)
+      mapButton:setX(self.mapIconOscillator * self.mapOscillationLevel * self.mapIconOscillatorScalar)
+    elseif self.mapOscillationLevel < 0.01 then
+      self.mapOscillationLevel = 0.0
+      mapButton:setX(self.mapIconOscillator * self.mapOscillationLevel * self.mapIconOscillatorScalar)
+    end
+  end
+end
+
+function MapShare:tablelength(object)
+  local count = 0
+  if not object then
+    return count
+  end
+  for _ in pairs(object) do count = count + 1 end
+  return count
 end
 
 local function shareMapButton(player, context, worldobjects, test)
@@ -129,6 +240,16 @@ local function shareMapButton(player, context, worldobjects, test)
       option.toolTip = tooltip;
     end
 
+    print("In shareMapButton:")
+    print(player)
+    print(playerObj)
+    if MapShare:tablelength(MapShare:getAvailableColors(playerObj)) == 0 then
+      local tooltip = ISWorldObjectContextMenu.addToolTip();
+      option.notAvailable = true
+      tooltip.description = "You need some sort of writing implement"
+      option.toolTip = tooltip
+    end
+
     if not ISWorldMap_instance then
       local tooltip = ISWorldObjectContextMenu.addToolTip();
       option.notAvailable = true;
@@ -140,6 +261,7 @@ end
 
 Events.OnReceiveGlobalModData.Add(MapShare.onReceiveGlobalModData)
 Events.OnFillWorldObjectContextMenu.Add(shareMapButton)
+Events.OnTick.Add(MapShare.shakeMap)
 
 
 -- bugs
