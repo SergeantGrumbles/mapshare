@@ -7,7 +7,7 @@ MapShare = {
   },
   mapIconOscillator = 0.0,
   mapOscillationLevel = 0,
-  mapOscillationDeceleration = 0.96,
+  mapOscillationDeceleration = 0.40,
   mapIconOscillatorScalar = 15.6,
   mapIconOscillatorRate = 0.8,
   mapIconOscillatorStep = 0.0,
@@ -169,17 +169,11 @@ function MapShare:shareMap(player, otherPlayer)
 end
 
 function MapShare:updateMap(key, mapData)
-  print("before inject set")
   self:injectSymbolsFromTable(mapData)
-  print("before wobble set")
   self.mapOscillationLevel = 1
-  print("after wobble set")
   local emptyPayload = {}
-  print("after payload set")
   ModData.add(key, emptyPayload)
-  print("after adding")
   ModData.transmit(key)
-  print("after transmit")
 end
 
 function MapShare:onReceiveGlobalModData(module, packet)
@@ -196,7 +190,7 @@ end
 
 function MapShare:shakeMap()
   local mapButton = ISEquippedItem.instance.mapBtn
-  if not mapButton or self.mapOscillationLevel == 0 then
+  if mapButton and self.mapOscillationLevel ~= 0 then
     if self.mapOscillationLevel > 0.01 then
       local fpsFrac = (UIManager.getMillisSinceLastRender() / 33.3) * 0.5;
       self.mapOscillationLevel = self.mapOscillationLevel * self.mapOscillationDeceleration
@@ -259,11 +253,17 @@ local function shareMapButton(player, context, worldobjects, test)
   end
 end
 
+local shakeMapButton = function()
+  MapShare:shakeMap()
+end
+
 Events.OnReceiveGlobalModData.Add(MapShare.onReceiveGlobalModData)
 Events.OnFillWorldObjectContextMenu.Add(shareMapButton)
-Events.OnTick.Add(MapShare.shakeMap)
+Events.OnTick.Add(shakeMapButton)
 
 
 -- bugs
 -- 1 sharing only happens on second share... This is lag.
--- Map must be opened at least once prior to anything working PER SESSION
+-- 2 Map must be opened at least once prior to anything working PER SESSION
+-- 3 anim not playing (but does get map out)
+-- 4 locations repeat due to rounding error... check with approximatelyEqual
